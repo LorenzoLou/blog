@@ -1,16 +1,22 @@
-# Welcome to GitHub Pages
+# Welcome to Lorenzo's Blog
 
-You can use the [editor on GitHub](https://github.com/loyin62688/lorenzo.github.io/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+You can click on the [Blog Home](./index.md) to browser my blogs and find more interesting
+content.
+If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on
+[GitHub Link](https://lorenzolou.github.io/blog/)
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
-
-[link test](./LinkTest.md)
 
 ## Blog Index
+
+---
+
 ### Thinking of Architecture
 #### Domain Driven Design
 * [Why we invent module?](./Explaination%20of%20the%20principle%20of%20OAuth2.0.md)
 * [a Sample of DDD](./Explaination%20of%20the%20principle%20of%20OAuth2.0.md)
+#### Cloud
+* [What's Serverless?](./index.md)
+* [What's Serverless?](./index.md)
 
 ### Tools and Framework
 #### OAuth 2.0

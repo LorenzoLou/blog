@@ -5,7 +5,7 @@ content.
 If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on 
 [GitHub Link](https://lorenzolou.github.io/blog/)
 
-## What's OAuth?
+### What's OAuth?
 
 [link test](./LinkTest.md)
 
@@ -47,5 +47,10 @@ Having trouble with Pages? Check out our [documentation](https://docs.github.com
 or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
 
 #### Client Credentials
+
+### What's Next
+
+we provided a sample based on springboot to help you go through the whole process of OAuth 2.0.
+[OAuth 2.0 Implementation by SpringBoot](https://docs.github.com/categories/github-pages-basics/)
 
 
