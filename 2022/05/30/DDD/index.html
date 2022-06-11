@@ -20,28 +20,35 @@
     var CONFIG = {"hostname":"lorenzolou.github.io","root":"/blog/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
   </script>
 
-  <meta property="og:type" content="website">
-<meta property="og:title" content="Lorenzo&#39;s Playground">
-<meta property="og:url" content="https://lorenzolou.github.io/blog/index.html">
+  <meta name="description" content="You can click on the Blog Home to browser my blogs and find more interestingcontent. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request onGitH">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Domain Driven Design Practical Tutorial">
+<meta property="og:url" content="https://lorenzolou.github.io/blog/2022/05/30/DDD/index.html">
 <meta property="og:site_name" content="Lorenzo&#39;s Playground">
+<meta property="og:description" content="You can click on the Blog Home to browser my blogs and find more interestingcontent. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request onGitH">
 <meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://lorenzolou.github.io/blog/2022/05/30/DDD/clean-architecture.png">
+<meta property="og:image" content="https://lorenzolou.github.io/blog/2022/05/30/DDD/clean-architecture.png">
+<meta property="article:published_time" content="2022-05-30T12:53:50.277Z">
+<meta property="article:modified_time" content="2022-06-11T13:56:43.828Z">
 <meta property="article:author" content="Lorenzo Lou">
 <meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://lorenzolou.github.io/blog/2022/05/30/DDD/clean-architecture.png">
 
-<link rel="canonical" href="https://lorenzolou.github.io/blog/">
+<link rel="canonical" href="https://lorenzolou.github.io/blog/2022/05/30/DDD/">
 
 
 <script id="page-configurations">
   // https://hexo.io/docs/variables.html
   CONFIG.page = {
     sidebar: "",
-    isHome : true,
-    isPost : false,
+    isHome : false,
+    isPost : true,
     lang   : 'en'
   };
 </script>
 
-  <title>Lorenzo's Playground</title>
+  <title>Domain Driven Design Practical Tutorial | Lorenzo's Playground</title>
   
 
 
@@ -167,9 +174,10 @@
         <div class="content-wrap">
           
 
-          <div class="content index posts-expand">
+          <div class="content post posts-expand">
             
-      
+
+    
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
@@ -185,10 +193,9 @@
       <meta itemprop="name" content="Lorenzo's Playground">
     </span>
       <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2022/05/30/DDD/" class="post-title-link" itemprop="url">Domain Driven Design Practical Tutorial</a>
-        </h2>
+        <h1 class="post-title" itemprop="name headline">
+          Domain Driven Design Practical Tutorial
+        </h1>
 
         <div class="post-meta">
             <span class="post-meta-item">
@@ -218,7 +225,7 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <p>You can click on the <a href="https://lorenzolou.github.io/blog/">Blog Home</a> to browser my blogs and find more interesting<br>content. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a target="_blank" rel="noopener" href="https://github.com/LorenzoLou">GitHub Link</a></p>
+        <p>You can click on the <a href="https://lorenzolou.github.io/blog/">Blog Home</a> to browser my blogs and find more interesting<br>content. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a target="_blank" rel="noopener" href="https://github.com/LorenzoLou">GitHub Link</a></p>
 <hr>
 <h3 id="What’s-DDD"><a href="#What’s-DDD" class="headerlink" title="What’s DDD?"></a>What’s DDD?</h3><p>DDD(Domain Driven Design) is just a concept, an abstract instruction or direction to help us reduce the complexity of<br>our own application. But because it’s a concept, it has already confused so many developers. We need to implement the<br>concept by ourselves without any restrictions, which means you don’t have a tutorial sample to refer at the beginning.<br>Here we try to provide an implement an application architecture by using DDD concept, but before that, what’s<br>application Architecture?</p>
 <h3 id="What’s-Application-Architecture"><a href="#What’s-Application-Architecture" class="headerlink" title="What’s Application Architecture"></a>What’s Application Architecture</h3><p>As we mentioned above, DDD is just a concept, but how we start to develop our own business logics by using this concept?<br>It’s a quite open question which actually does not have a fixed question. But from my perspective, I list the<br>requirements of Application Architecture:</p>
@@ -269,180 +276,37 @@
 <p><img src="/blog/2022/05/30/DDD/clean-architecture.png"></p>
 <h3 id="Unit-Test"><a href="#Unit-Test" class="headerlink" title="Unit Test"></a>Unit Test</h3><h3 id="Summary"><a href="#Summary" class="headerlink" title="Summary"></a>Summary</h3><p>Let’s say someday we need to add transaction fee when user transfer money to another account. So first thing come up to<br>our mind is we need to modify some code in our domain layer, maybe we need to add some entity, maybe we need to create<br>another dependency on other system, but the most important thing is, we start to think from the domain layer, and then<br>we think about how to implement the abstraction defined by domain layer, how to save the status of domain objects. The<br>way how we develop, is the very proof that why we call it “driven by the domain” </p>
 
-      
     </div>
 
     
     
     
+
       <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/05/30/Principle-of-OAuth2-0/">
+        
 
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/blog/images/avatar.gif">
-      <meta itemprop="name" content="Lorenzo Lou">
-      <meta itemprop="description" content="">
-    </span>
 
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="Lorenzo's Playground">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2022/05/30/Principle-of-OAuth2-0/" class="post-title-link" itemprop="url">Explaination of the principle of Oauth2.0</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2022-05-30 20:36:33 / Modified: 20:53:50" itemprop="dateCreated datePublished" datetime="2022-05-30T20:36:33+08:00">2022-05-30</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any<br>issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
-<hr>
-<h3 id="What’s-OAuth"><a href="#What’s-OAuth" class="headerlink" title="What’s OAuth?"></a>What’s OAuth?</h3><p>OAuth is a protocol that designed to protect the user who wanna share their data to third part application or systems.<br>OAuth 2.0 is subsequent version of OAuth 1.0, mostly we use OAuth 2.0 nowadays.</p>
-<h3 id="Sample"><a href="#Sample" class="headerlink" title="Sample"></a>Sample</h3><p>Let’s say when we’re going to log in YOUTUBE by using the account of GOOGLE</p>
-<h4 id="Terms"><a href="#Terms" class="headerlink" title="Terms"></a>Terms</h4><p>In this case some here are the professional introduction of terms we may use.</p>
-<ul>
-<li>Resource Server: In this case, YOUTUBE is going to get the username, profile, avatar from GOOGLE, so we call GOOGLE<br>service which stored this kind of user information as Resource Server</li>
-<li>Resource Owner: Denotes the user here.</li>
-<li>Client: Denotes YOUTUBE here.</li>
-<li>Authorization Server: In this case, it should be the server of GOOGLE also.(we just differentiate Authorization Server<br>with Resource Service logically, they can be provided by a same server)</li>
-<li>Useragent: The browser you use when you’re browsing the YOUTUBE videos.</li>
-</ul>
-<p>Base on authorization code mode</p>
-<p><img src="/blog/2022/05/30/Principle-of-OAuth2-0/OAuth2.0-Diagram.drawio.svg"></p>
-<p>if your application is based on frontend and backend separation architecture, then every request you send should involve<br>the token.</p>
-<p>For more details<br>see <a target="_blank" rel="noopener" href="https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax">Basic writing and formatting syntax</a><br>.</p>
-<h3 id="AUTH-MODE"><a href="#AUTH-MODE" class="headerlink" title="AUTH MODE"></a>AUTH MODE</h3><p>We have 5 kinds of authorization modes.</p>
-<ol>
-<li>Authorization code</li>
-<li>Implicit</li>
-<li>Resource Owner Password Credentials</li>
-<li>Client Credentials</li>
-</ol>
-<p>Authorization Code Mode is the most functional, secure and commonly used mode in our projects. So in our next blog we<br>prepared Resource Service, Auth Service, and Client in which we use Spring Security to implement the OAuth 2.0 protocol<br>and help us understand all the details related the OAuth 2.0.</p>
-<p><a href="./Using%20Spring%20Security%20to%20implement%20OAuth2.0.md">How to implement OAuth by Using Spring Security Framework</a></p>
-
-      
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/blog/2022/05/30/Principle-of-OAuth2-0/" rel="prev" title="Explaination of the principle of Oauth2.0">
+      <i class="fa fa-chevron-left"></i> Explaination of the principle of Oauth2.0
+    </a></div>
+      <div class="post-nav-item"></div>
     </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
       </footer>
+    
   </article>
   
   
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/05/29/hello-world/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/blog/images/avatar.gif">
-      <meta itemprop="name" content="Lorenzo Lou">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="Lorenzo's Playground">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/blog/2022/05/29/hello-world/" class="post-title-link" itemprop="url">Hello World</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-
-              <time title="Created: 2022-05-29 21:53:34" itemprop="dateCreated datePublished" datetime="2022-05-29T21:53:34+08:00">2022-05-29</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <p>Welcome to <a target="_blank" rel="noopener" href="https://hexo.io/">Hexo</a>! This is your very first post. Check <a target="_blank" rel="noopener" href="https://hexo.io/docs/">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a target="_blank" rel="noopener" href="https://hexo.io/docs/troubleshooting.html">troubleshooting</a> or you can ask me on <a target="_blank" rel="noopener" href="https://github.com/hexojs/hexo/issues">GitHub</a>.</p>
-<h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">&quot;My New Post&quot;</span></span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/writing.html">Writing</a></p>
-<h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/server.html">Server</a></p>
-<h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/generating.html">Generating</a></p>
-<h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/one-command-deployment.html">Deployment</a></p>
-
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
-
   
 
 
 
           </div>
           
+    <div class="comments" id="gitalk-container"></div>
 
 <script>
   window.addEventListener('tabs:register', () => {
@@ -489,6 +353,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#What%E2%80%99s-DDD"><span class="nav-number">1.</span> <span class="nav-text">What’s DDD?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#What%E2%80%99s-Application-Architecture"><span class="nav-number">2.</span> <span class="nav-text">What’s Application Architecture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Example"><span class="nav-number">3.</span> <span class="nav-text">Example</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Scenario"><span class="nav-number">3.1.</span> <span class="nav-text">Scenario</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Development-Requirement-Analise"><span class="nav-number">3.2.</span> <span class="nav-text">Development Requirement Analise</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#implement-by-using-script-like-coding-style"><span class="nav-number">3.3.</span> <span class="nav-text">implement by using script like coding style</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why"><span class="nav-number">4.</span> <span class="nav-text">Why?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Solution"><span class="nav-number">5.</span> <span class="nav-text">Solution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Unit-Test"><span class="nav-number">6.</span> <span class="nav-text">Unit Test</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Summary"><span class="nav-number">7.</span> <span class="nav-text">Summary</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -594,6 +459,25 @@
 
   
 
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.css">
+
+<script>
+NexT.utils.loadComments(document.querySelector('#gitalk-container'), () => {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.js', () => {
+    var gitalk = new Gitalk({
+      clientID    : '686954989cace0b7e2ec',
+      clientSecret: 'd06f0e8553b92cf39b567431dbeaeec90c9f59a8',
+      repo        : 'blog',
+      owner       : 'LorenzoLou',
+      admin       : ['LorenzoLou'],
+      id          : '3aad038c78c05500680edd8ee6bd6c81',
+        language: 'en',
+      distractionFreeMode: true
+    });
+    gitalk.render('gitalk-container');
+  }, window.Gitalk);
+});
+</script>
 
 </body>
 </html>
