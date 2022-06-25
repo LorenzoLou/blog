@@ -173,6 +173,113 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/06/19/Zookeeper-Election/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/blog/2022/06/19/Zookeeper-Election/" class="post-title-link" itemprop="url">Zookeeper Introduction</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2022-06-19 20:08:11" itemprop="dateCreated datePublished" datetime="2022-06-19T20:08:11+08:00">2022-06-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-06-25 22:24:46" itemprop="dateModified" datetime="2022-06-25T22:24:46+08:00">2022-06-25</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
+<hr>
+<h3 id="What’s-zookeeper"><a href="#What’s-zookeeper" class="headerlink" title="What’s zookeeper?"></a>What’s zookeeper?</h3><p>Zookeeper is a distributed system. In most cases, zookeeper acts as a coordinator, rather than a storage or message queue. For instance, let’s say we wanna inform other systems after we have done some stuffs, in this scerario, we can create a path as a signal on zabbix, and systems which want to know the events can subscribe the path event. It’s a powful coordinator providing data consistency services and most important as it is a distributed system, it also conform to the CAP rules.</p>
+<h3 id="What’s-CAP"><a href="#What’s-CAP" class="headerlink" title="What’s CAP?"></a>What’s CAP?</h3><p>Theoretically, the CAP theorem, also known as Brewer’s theorem, states that it is impossible for a distributed computing system to satisfy the following three points at the same time: </p>
+<ul>
+<li>Consistence (all nodes can access the same latest copy of data) </li>
+<li>Availability (every request can get a non-error response in a certain period of time - but the data obtained is not guaranteed to be the latest data)</li>
+<li>Partition fault tolerance (Network partitioning) (System can always keep in consistency in a certain period of time. For instance, the network split into two regions, System can only choose to provide the service but with inconsistent data or stop providing service to keep the data consistent. That means If the node on one side of the partition is set to be unavailable in order to keep data consistency, the item A will fail. If two nodes can communicate with each other, both C and A can be guaranteed, but this leads to the loss of the Item C.)</li>
+</ul>
+<h3 id="How-zookeeper-keep-data-consistency"><a href="#How-zookeeper-keep-data-consistency" class="headerlink" title="How zookeeper keep data consistency?"></a>How zookeeper keep data consistency?</h3><p>Before we discuss of the data consistency, we must understand the principle of zookeeper’s election. Here is some specialist terms:</p>
+<ul>
+<li>Leader, responsible for all the transaction requests, like data update, data add, and so forth.</li>
+<li>Follower, responsible for the non-transaction requests, like data query.</li>
+<li>ZXID, ZooKeeper Transaction Id, denotes the latest data version one node has.</li>
+</ul>
+<p>Let’s assume we have three nodes, only if we elect the leader then the cluster can continue to work. So how they elect the leader?</p>
+<ol>
+<li>Choose a node with the latest data version(ZXID). When the election start, each node deem themself as the node with latest ZXID. They will sign their Identifier Card number (SID) on the vote and broadcast vote requests for themselves. Actually the reason why they gotta broadcast requests is every vode has their own vote ballot box.</li>
+<li>It’s Kinda different from the way we human vote. Each node of the zabbix cluster mantain a ballot box. As each node will send their vote to all the nodes cluster has, so all the nodes will hold the same votes eventually.</li>
+<li>They will try to find the one who holds the most votes will be the leader. Of cause there is a precondition, the number of votes leader hold must be more than half of the current cluster.</li>
+</ol>
+<h4 id="Election-Analysis"><a href="#Election-Analysis" class="headerlink" title="Election Analysis"></a>Election Analysis</h4><p>Let’s jump int the code. </p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">   public interface Election &#123;</span><br><span class="line"></span><br><span class="line">    Vote lookForLeader() throws InterruptedException;</span><br><span class="line">    void shutdown();</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>This <code>Election</code> interface is very important, zookeeper implement the interface by developed a class called <code>FastLeaderElection</code> , let’s jump into the makeOffer()</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Messages that a peer wants to send to other peers.</span><br><span class="line"> * These messages can be both Notifications and Acks</span><br><span class="line"> * of reception of notification.</span><br><span class="line"> */</span><br><span class="line">public static class ToSend &#123;...&#125;</span><br><span class="line"></span><br><span class="line">LinkedBlockingQueue&lt;ToSend&gt; sendqueue;</span><br><span class="line">LinkedBlockingQueue&lt;Notification&gt; recvqueue;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * Multi-threaded implementation of message handler. Messenger</span><br><span class="line"> * implements two sub-classes: WorkReceiver and  WorkSender. The</span><br><span class="line"> * functionality of each is obvious from the name. Each of these</span><br><span class="line"> * spawns a new thread.</span><br><span class="line"> */</span><br><span class="line"></span><br><span class="line">protected class Messenger &#123;...&#125;</span><br><span class="line"></span><br><span class="line">QuorumPeer self;</span><br><span class="line">Messenger messenger;</span><br><span class="line">AtomicLong logicalclock = new AtomicLong(); /* Election instance */</span><br><span class="line">long proposedLeader;</span><br><span class="line">long proposedZxid;</span><br><span class="line">long proposedEpoch;</span><br></pre></td></tr></table></figure>
+
+<p>The most important thing is you can see that <code>FastLeaderElection</code> use the most typical Composite Pattern. It include <code>QuorumPeer</code>, which mainly involve all the core logics of ZK election. Let’s jump into <code>QuorumPeer</code> to investigate.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">public synchronized void start() &#123;</span><br><span class="line">    if (!getView().containsKey(myid)) &#123;</span><br><span class="line">        throw new RuntimeException(&quot;My id &quot; + myid + &quot; not in the peer list&quot;);</span><br><span class="line">    &#125;</span><br><span class="line">    loadDataBase();</span><br><span class="line">    startServerCnxnFactory();</span><br><span class="line">    try &#123;</span><br><span class="line">        adminServer.start();</span><br><span class="line">    &#125; catch (AdminServerException e) &#123;</span><br><span class="line">        LOG.warn(&quot;Problem starting AdminServer&quot;, e);</span><br><span class="line">    &#125;</span><br><span class="line">    startLeaderElection();</span><br><span class="line">    startJvmPauseMonitor();</span><br><span class="line">    super.start();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">public synchronized void startLeaderElection() &#123;</span><br><span class="line">    try &#123;</span><br><span class="line">        if (getPeerState() == ServerState.LOOKING) &#123;</span><br><span class="line">            currentVote = new Vote(myid, getLastLoggedZxid(), getCurrentEpoch());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; catch (IOException e) &#123;</span><br><span class="line">        RuntimeException re = new RuntimeException(e.getMessage());</span><br><span class="line">        re.setStackTrace(e.getStackTrace());</span><br><span class="line">        throw re;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    this.electionAlg = createElectionAlgorithm(electionType);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+<p>actually in <code>createElectionAlgorithm</code>, it composite a <code>FastLeaderElection</code>.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br></pre></td><td class="code"><pre><span class="line">case LOOKING:</span><br><span class="line">    if (getInitLastLoggedZxid() == -1) &#123;</span><br><span class="line">        LOG.debug(&quot;Ignoring notification as our zxid is -1&quot;);</span><br><span class="line">        break;</span><br><span class="line">    &#125;</span><br><span class="line">    if (n.zxid == -1) &#123;</span><br><span class="line">        LOG.debug(&quot;Ignoring notification from member with -1 zxid &#123;&#125;&quot;, n.sid);</span><br><span class="line">        break;</span><br><span class="line">    &#125;</span><br><span class="line">    // If notification &gt; current, replace and send messages out</span><br><span class="line">    if (n.electionEpoch &gt; logicalclock.get()) &#123;</span><br><span class="line">        logicalclock.set(n.electionEpoch);</span><br><span class="line">        recvset.clear();</span><br><span class="line">        if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, getInitId(), getInitLastLoggedZxid(), getPeerEpoch())) &#123;</span><br><span class="line">            updateProposal(n.leader, n.zxid, n.peerEpoch);</span><br><span class="line">        &#125; else &#123;</span><br><span class="line">            updateProposal(getInitId(), getInitLastLoggedZxid(), getPeerEpoch());</span><br><span class="line">        &#125;</span><br><span class="line">        sendNotifications();</span><br><span class="line">    &#125; else if (n.electionEpoch &lt; logicalclock.get()) &#123;</span><br><span class="line">            LOG.debug(</span><br><span class="line">                &quot;Notification election epoch is smaller than logicalclock. n.electionEpoch = 0x&#123;&#125;, logicalclock=0x&#123;&#125;&quot;,</span><br><span class="line">                Long.toHexString(n.electionEpoch),</span><br><span class="line">                Long.toHexString(logicalclock.get()));</span><br><span class="line">        break;</span><br><span class="line">    &#125; else if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">        updateProposal(n.leader, n.zxid, n.peerEpoch);</span><br><span class="line">        sendNotifications();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    LOG.debug(</span><br><span class="line">        &quot;Adding vote: from=&#123;&#125;, proposed leader=&#123;&#125;, proposed zxid=0x&#123;&#125;, proposed election epoch=0x&#123;&#125;&quot;,</span><br><span class="line">        n.sid,</span><br><span class="line">        n.leader,</span><br><span class="line">        Long.toHexString(n.zxid),</span><br><span class="line">        Long.toHexString(n.electionEpoch));</span><br><span class="line"></span><br><span class="line">    // don&#x27;t care about the version if it&#x27;s in LOOKING state</span><br><span class="line">    recvset.put(n.sid, new Vote(n.leader, n.zxid, n.electionEpoch, n.peerEpoch));</span><br><span class="line"></span><br><span class="line">    voteSet = getVoteTracker(recvset, new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch));</span><br><span class="line"></span><br><span class="line">    if (voteSet.hasAllQuorums()) &#123;</span><br><span class="line"></span><br><span class="line">        // Verify if there is any change in the proposed leader</span><br><span class="line">        while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) &#123;</span><br><span class="line">            if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">                recvqueue.put(n);</span><br><span class="line">                break;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        /*</span><br><span class="line">         * This predicate is true once we don&#x27;t read any new</span><br><span class="line">         * relevant message from the reception queue</span><br><span class="line">         */</span><br><span class="line">        if (n == null) &#123;</span><br><span class="line">            setPeerState(proposedLeader, voteSet);</span><br><span class="line">            Vote endVote = new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch);</span><br><span class="line">            leaveInstance(endVote);</span><br><span class="line">            return endVote;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    break;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Check if a pair (server id, zxid) succeeds our</span><br><span class="line"> * current vote.</span><br><span class="line"> *</span><br><span class="line"> */</span><br><span class="line">protected boolean totalOrderPredicate(long newId, long newZxid, long newEpoch, long curId, long curZxid, long curEpoch) &#123;</span><br><span class="line"></span><br><span class="line">    if (self.getQuorumVerifier().getWeight(newId) == 0) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return ((newEpoch &gt; curEpoch)</span><br><span class="line">            || ((newEpoch == curEpoch)</span><br><span class="line">                &amp;&amp; ((newZxid &gt; curZxid)</span><br><span class="line">                    || ((newZxid == curZxid)</span><br><span class="line">                        &amp;&amp; (newId &gt; curId)))));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>this is right part we refered to in the former section. </p>
+<ol>
+<li>if new epoch is higher, update vote as the new one.</li>
+<li>if new epoch is the same as current epoch, but new zxid is higher, update vote as the new one.</li>
+<li>if new epoch is the same as current epoch, new zxid is the same, update vote as the new one.</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">if (voteSet.hasAllQuorums()) &#123;</span><br><span class="line"></span><br><span class="line">    // Verify if there is any change in the proposed leader</span><br><span class="line">    while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) &#123;</span><br><span class="line">        if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">            recvqueue.put(n);</span><br><span class="line">            break;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    /*</span><br><span class="line">     * This predicate is true once we don&#x27;t read any new</span><br><span class="line">     * relevant message from the reception queue</span><br><span class="line">     */</span><br><span class="line">    if (n == null) &#123;</span><br><span class="line">        setPeerState(proposedLeader, voteSet);</span><br><span class="line">        Vote endVote = new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch);</span><br><span class="line">        leaveInstance(endVote);</span><br><span class="line">        return endVote;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/05/30/DDD/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -513,7 +620,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/blog/archives/">
         
-          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-count">4</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
