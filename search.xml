@@ -67,36 +67,6 @@
 ]]></content>
   </entry>
   <entry>
-    <title>Explaination of the principle of Oauth2.0</title>
-    <url>/blog/2022/05/30/Principle-of-OAuth2-0/</url>
-    <content><![CDATA[<p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any<br>issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
-<hr>
-<h3 id="What’s-OAuth"><a href="#What’s-OAuth" class="headerlink" title="What’s OAuth?"></a>What’s OAuth?</h3><p>OAuth is a protocol that designed to protect the user who wanna share their data to third part application or systems.<br>OAuth 2.0 is subsequent version of OAuth 1.0, mostly we use OAuth 2.0 nowadays.</p>
-<h3 id="Sample"><a href="#Sample" class="headerlink" title="Sample"></a>Sample</h3><p>Let’s say when we’re going to log in YOUTUBE by using the account of GOOGLE</p>
-<h4 id="Terms"><a href="#Terms" class="headerlink" title="Terms"></a>Terms</h4><p>In this case some here are the professional introduction of terms we may use.</p>
-<ul>
-<li>Resource Server: In this case, YOUTUBE is going to get the username, profile, avatar from GOOGLE, so we call GOOGLE<br>service which stored this kind of user information as Resource Server</li>
-<li>Resource Owner: Denotes the user here.</li>
-<li>Client: Denotes YOUTUBE here.</li>
-<li>Authorization Server: In this case, it should be the server of GOOGLE also.(we just differentiate Authorization Server<br>with Resource Service logically, they can be provided by a same server)</li>
-<li>Useragent: The browser you use when you’re browsing the YOUTUBE videos.</li>
-</ul>
-<p>Base on authorization code mode</p>
-<p><img src="/blog/2022/05/30/Principle-of-OAuth2-0/OAuth2.0-Diagram.drawio.svg"></p>
-<p>if your application is based on frontend and backend separation architecture, then every request you send should involve<br>the token.</p>
-<p>For more details<br>see <a href="https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax">Basic writing and formatting syntax</a><br>.</p>
-<h3 id="AUTH-MODE"><a href="#AUTH-MODE" class="headerlink" title="AUTH MODE"></a>AUTH MODE</h3><p>We have 5 kinds of authorization modes.</p>
-<ol>
-<li>Authorization code</li>
-<li>Implicit</li>
-<li>Resource Owner Password Credentials</li>
-<li>Client Credentials</li>
-</ol>
-<p>Authorization Code Mode is the most functional, secure and commonly used mode in our projects. So in our next blog we<br>prepared Resource Service, Auth Service, and Client in which we use Spring Security to implement the OAuth 2.0 protocol<br>and help us understand all the details related the OAuth 2.0.</p>
-<p><a href="./Using%20Spring%20Security%20to%20implement%20OAuth2.0.md">How to implement OAuth by Using Spring Security Framework</a></p>
-]]></content>
-  </entry>
-  <entry>
     <title>Zookeeper Introduction</title>
     <url>/blog/2022/06/19/Zookeeper-Election/</url>
     <content><![CDATA[<p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
@@ -142,6 +112,36 @@
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">if (voteSet.hasAllQuorums()) &#123;</span><br><span class="line"></span><br><span class="line">    // Verify if there is any change in the proposed leader</span><br><span class="line">    while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) &#123;</span><br><span class="line">        if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">            recvqueue.put(n);</span><br><span class="line">            break;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    /*</span><br><span class="line">     * This predicate is true once we don&#x27;t read any new</span><br><span class="line">     * relevant message from the reception queue</span><br><span class="line">     */</span><br><span class="line">    if (n == null) &#123;</span><br><span class="line">        setPeerState(proposedLeader, voteSet);</span><br><span class="line">        Vote endVote = new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch);</span><br><span class="line">        leaveInstance(endVote);</span><br><span class="line">        return endVote;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 
+]]></content>
+  </entry>
+  <entry>
+    <title>Explaination of the principle of Oauth2.0</title>
+    <url>/blog/2022/05/30/Principle-of-OAuth2-0/</url>
+    <content><![CDATA[<p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any<br>issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
+<hr>
+<h3 id="What’s-OAuth"><a href="#What’s-OAuth" class="headerlink" title="What’s OAuth?"></a>What’s OAuth?</h3><p>OAuth is a protocol that designed to protect the user who wanna share their data to third part application or systems.<br>OAuth 2.0 is subsequent version of OAuth 1.0, mostly we use OAuth 2.0 nowadays.</p>
+<h3 id="Sample"><a href="#Sample" class="headerlink" title="Sample"></a>Sample</h3><p>Let’s say when we’re going to log in YOUTUBE by using the account of GOOGLE</p>
+<h4 id="Terms"><a href="#Terms" class="headerlink" title="Terms"></a>Terms</h4><p>In this case some here are the professional introduction of terms we may use.</p>
+<ul>
+<li>Resource Server: In this case, YOUTUBE is going to get the username, profile, avatar from GOOGLE, so we call GOOGLE<br>service which stored this kind of user information as Resource Server</li>
+<li>Resource Owner: Denotes the user here.</li>
+<li>Client: Denotes YOUTUBE here.</li>
+<li>Authorization Server: In this case, it should be the server of GOOGLE also.(we just differentiate Authorization Server<br>with Resource Service logically, they can be provided by a same server)</li>
+<li>Useragent: The browser you use when you’re browsing the YOUTUBE videos.</li>
+</ul>
+<p>Base on authorization code mode</p>
+<p><img src="/blog/2022/05/30/Principle-of-OAuth2-0/OAuth2.0-Diagram.drawio.svg"></p>
+<p>if your application is based on frontend and backend separation architecture, then every request you send should involve<br>the token.</p>
+<p>For more details<br>see <a href="https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax">Basic writing and formatting syntax</a><br>.</p>
+<h3 id="AUTH-MODE"><a href="#AUTH-MODE" class="headerlink" title="AUTH MODE"></a>AUTH MODE</h3><p>We have 5 kinds of authorization modes.</p>
+<ol>
+<li>Authorization code</li>
+<li>Implicit</li>
+<li>Resource Owner Password Credentials</li>
+<li>Client Credentials</li>
+</ol>
+<p>Authorization Code Mode is the most functional, secure and commonly used mode in our projects. So in our next blog we<br>prepared Resource Service, Auth Service, and Client in which we use Spring Security to implement the OAuth 2.0 protocol<br>and help us understand all the details related the OAuth 2.0.</p>
+<p><a href="./Using%20Spring%20Security%20to%20implement%20OAuth2.0.md">How to implement OAuth by Using Spring Security Framework</a></p>
 ]]></content>
   </entry>
   <entry>
