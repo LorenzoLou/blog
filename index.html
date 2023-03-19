@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
 <meta name="theme-color" content="#222">
-<meta name="generator" content="Hexo 6.2.0">
+<meta name="generator" content="Hexo 6.3.0">
   <link rel="apple-touch-icon" sizes="180x180" href="/blog/images/apple-touch-icon-next.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/blog/images/favicon-32x32-next.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/blog/images/favicon-16x16-next.png">
@@ -173,6 +173,206 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2023/03/19/spark-executor-memory-introduction/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/blog/2023/03/19/spark-executor-memory-introduction/" class="post-title-link" itemprop="url">spark executor memory introduction</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2023-03-19 15:56:48 / Modified: 16:01:36" itemprop="dateCreated datePublished" datetime="2023-03-19T15:56:48+08:00">2023-03-19</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="Overview"><a href="#Overview" class="headerlink" title="Overview"></a>Overview</h1><p>Hello everyone, today I would like to introduce a problem that we often encounter in our work: “Container killed by YARN for exceeding memory limits”. What causes this problem? What is the difference between this problem and OOM? What is the relationship between this problem and the memory structure of Spark Executor? Today, let’s explore these three questions.</p>
+<p>First of all, a Spark cluster will start two types of JVM processes, the Driver and the Executor. The former is the main control process, responsible for creating the Spark context, submitting Spark jobs, and transforming jobs into compute tasks. It also coordinates task scheduling among the various Executor processes. The latter is responsible for executing specific compute tasks on worker nodes, returning results to the Driver, and providing storage functionality for RDDs that need to be persisted. Since the memory management of the Driver is relatively simple, this article mainly analyzes the memory management of the Executor. Hereafter, the term “Spark memory” refers specifically to the memory of the Executor. [Note that this article targets Spark version 2.x, deployed in YARN mode.]</p>
+<p><em>the memory layout of the entire Executor side is shown in the following figure.</em></p>
+<p><img src="/blog/2023/03/19/spark-executor-memory-introduction/executorMemoryOverview.jpeg"></p>
+<p>We can see that in the Yarn cluster management mode, Spark runs in the form of Executor Containers in NodeManager, with its maximum available memory limit specified by yarn.scheduler.maximum-allocation-mb, which we call MonitorMemory.</p>
+<h2 id="Executor-Memory-Strucutre-On-Yarn-Overview"><a href="#Executor-Memory-Strucutre-On-Yarn-Overview" class="headerlink" title="Executor Memory Strucutre On Yarn Overview"></a>Executor Memory Strucutre On Yarn Overview</h2><p>The Executor memory area on yarn is divided into two parts:</p>
+<ol>
+<li>JVM off-heap memory<br>The size is specified by the spark.yarn.executor.memoryOverhead parameter, with a default size of executorMemory * 0.10, with a minimum of 384m. This memory is mainly used for JVM itself, strings, NIO Buffer (Direct Buffer), and other overheads. This part is for user code and Spark’s non-operable memory, and can be adjusted by tuning parameters when it is insufficient.</li>
+<li>On-heap memory (Spark Executor Memory)<br>The size is configured by the –executor-memory or spark.executor.memory parameter when the Spark application starts, which is the maximum heap memory allocated by the JVM (-Xmx). To more efficiently use this part of memory, Spark has logically partitioned and managed it. We will explain the unified memory management in detail below.</li>
+</ol>
+<p>For Yarn clusters, there is a limit: ExecutorMemory + MemoryOverhead &lt;&#x3D; monitormemory. If the sum of ExecutorMemory and MemoryOverhead specified when the application is submitted is greater than MonitorMemory, the Executor will fail to be allocated. If the actual memory usage exceeds the upper limit threshold during runtime, the Yarn will terminate (kill) the Executor process.<br>After Spark 1.6, unified memory management was introduced, including two areas: on-heap memory and off-heap memory. The following is a detailed explanation of these two areas.<br>By default, Spark only uses on-heap memory. Spark manages on-heap memory in a logical “planning” manner. The on-heap memory area on the Executor side is logically divided into the following four areas:</p>
+<h3 id="Spark-Executor-Memory"><a href="#Spark-Executor-Memory" class="headerlink" title="Spark Executor Memory"></a>Spark Executor Memory</h3><p><img src="/blog/2023/03/19/spark-executor-memory-introduction/unifiedMemory.jpg"></p>
+<h4 id="Execution-Memory"><a href="#Execution-Memory" class="headerlink" title="Execution Memory"></a>Execution Memory</h4><p>mainly used to store temporary data during calculations such as Shuffle, Join, Sort, and Aggregation.<br>Storage Memory: mainly used to store Spark cache data such as RDD caching, unroll data, and broadcast data.<br>User Memory: mainly used to store data needed for RDD transformation operations, such as RDD dependencies.<br>Reserved Memory: system reserved memory, which is used to store Spark internal objects [300MB].</p>
+<h4 id="Reserved-Memory"><a href="#Reserved-Memory" class="headerlink" title="Reserved Memory"></a>Reserved Memory</h4><p>The system reserves memory for storing Spark internal objects. Its size is hard-coded in the code and its value equals to 300MB, which cannot be modified (if in a testing environment, we can modify it using the spark.testing.reservedMemory parameter); if the memory allocated to an Executor is less than 1.5 * 300 &#x3D; 450M, the Executor will not be able to run.</p>
+<h4 id="Storage-Memory"><a href="#Storage-Memory" class="headerlink" title="Storage Memory"></a>Storage Memory</h4><p>Mainly used to store Spark cache data, such as RDD caching, broadcast data, and unroll data. The memory occupancy ratio is UsableMemory * spark.memory.fraction * spark.memory.storageFraction. In Spark 2+, by default, Storage Memory and Execution Memory each account for approximately 30% of the system’s total memory (1 * 0.6 * 0.5 &#x3D; 0.3). In Unified Memory management, these two types of memory can be borrowed from each other. We will discuss the specific borrowing mechanism in the next section.</p>
+<h4 id="Execution-Memory-1"><a href="#Execution-Memory-1" class="headerlink" title="Execution Memory"></a>Execution Memory</h4><p>Mainly used to store temporary data during calculations such as Shuffle, Join, Sort, and Aggregation. The memory occupancy ratio is UsableMemory * spark.memory.fraction * (1 - spark.memory.storageFraction). In Spark 2+, by default, Storage Memory and Execution Memory each account for approximately 30% of the system’s total memory (1 * 0.6 * (1 - 0.5) &#x3D; 0.3). In Unified Memory management, these two types of memory can be borrowed from each other.</p>
+<h4 id="Other-x2F-User-Memory"><a href="#Other-x2F-User-Memory" class="headerlink" title="Other&#x2F;User Memory"></a>Other&#x2F;User Memory</h4><p>mainly used to store data needed for RDD transformation operations, such as RDD dependencies. The memory occupancy ratio is UsableMemory * (1 - spark.memory.fraction). In Spark 2+, it defaults to 40% of the available memory (1 * (1 - 0.6) &#x3D; 0.4).</p>
+<p>There are a few interesting points here that we can elaborate on:</p>
+<ol>
+<li>Why is 300MB reserved memory set?<br>In the initial version of Unified Memory Management, the “Other” part of memory did not have a fixed value of 300MB, but instead used a percentage similar to static memory management, initially set to 25%. However, in practice, setting a low amount of memory (e.g. 1GB) led to OOM errors. This issue is discussed in detail here: “Make unified memory management work with small heaps”. Therefore, the “Other” part of memory was modified to reserve 300MB of memory upfront.</li>
+<li>spark.memory.fraction decreased from 0.75 to 0.6<br>The initial value of spark.memory.fraction was set to 0.75, and many analyses of Unified Memory Management also described it as such. However, it was found that this value was set too high and resulted in long GC times. Spark 2.0 lowered the default value to 0.6. For more detailed discussion, see “Reduce spark.memory.fraction default to avoid overrunning old gen in JVM default config”.</li>
+<li>Off-heap Memory<br>Spark 1.6 introduced Off-heap memory (see SPARK-11389). In this mode, memory is not allocated within the JVM, but instead uses Java’s unsafe API to directly request memory from the operating system, similar to C’s malloc(). This allows Spark to directly access off-heap memory, reducing unnecessary memory overhead and frequent GC scans and collections, improving processing performance. Additionally, off-heap memory can be accurately allocated and released, and the space occupied by serialized data can be accurately calculated, making it easier to manage and reducing errors compared to on-heap memory. The downside is that one must write the logic for memory allocation and release themselves.</li>
+</ol>
+<h2 id="Task-Memory-Manager"><a href="#Task-Memory-Manager" class="headerlink" title="Task Memory Manager"></a>Task Memory Manager</h2><p>Tasks in the Executor are executed as threads and share the JVM’s resources (i.e., Execution memory). There is no strong isolation between the memory resources of tasks (i.e., tasks do not have a dedicated heap area). Therefore, it is possible for an earlier arriving task to occupy a large amount of memory, causing a later arriving task to be suspended due to insufficient memory.</p>
+<p>In Spark’s task memory management, a HashMap is used to store the mapping between tasks and their memory consumption. The amount of memory that each task can occupy is half to one over n of the potential available computing memory (potential available computing memory is the initial computing memory plus preemptive storage memory). When the remaining memory is less than half to one over n, the task will be suspended until other tasks release execution memory, and the memory lower limit of half to one over n is satisfied, and the task is awakened. Here, n is the number of active tasks in the current Executor.</p>
+<p>For example, if the Execution memory size is 10GB and there are 5 running tasks in the current Executor, the range of memory that this task can apply for is from 10 &#x2F; (2 * 5) to 10 &#x2F; 5, which is 1GB to 2GB.</p>
+<p>During task execution, if more memory is needed, it will be requested. If there is available memory, the request will be automatically successful; otherwise, an OutOfMemoryError will be thrown. The maximum number of tasks that can run simultaneously in each Executor is determined by the number of CPU cores N allocated by the Executor and the number of CPU cores C required by each task. Specifically:</p>
+<p>N &#x3D; spark.executor.cores<br>C &#x3D; spark.task.cpus</p>
+<p>Therefore, the maximum task parallelism of each Executor can be represented as TP &#x3D; N &#x2F; C. The value of C depends on the application type, and most applications can use the default value of 1. Thus, the main factor affecting the maximum task parallelism (i.e., the maximum number of active tasks) in the Executor is N.</p>
+<p>Based on the memory usage characteristics of tasks, the Executor memory model described above can be simply abstracted as the following diagram:</p>
+<p><img src="/blog/2023/03/19/spark-executor-memory-introduction/unifiedMemory.jpg"></p>
+<h2 id="Example"><a href="#Example" class="headerlink" title="Example"></a>Example</h2><p>To better understand the use of on-heap and off-heap memory mentioned above, here is a simple example.<br>3.1. Only On-Heap Memory Used<br>We have submitted a Spark job with the following memory configuration:<br><code>--executor-memory 18g.</code></p>
+<p>As we have not set the <code>spark.memory.fraction</code> and <code>spark.memory.storageFraction</code> parameters, we can see from the Spark UI that the available Storage Memory is displayed as follows:</p>
+<p><img src="/blog/2023/03/19/spark-executor-memory-introduction/sparkHistoryUi.jpg"></p>
+<p>From the image above, we can see that the available Storage Memory is 10.1GB. How was this number obtained? According to the previous rule, we can perform the following calculations:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">systemMemory = spark.executor.memory</span><br><span class="line">reservedMemory = 300MB</span><br><span class="line">usableMemory = systemMemory - reservedMemory</span><br><span class="line">StorageMemory= usableMemory * spark.memory.fraction * spark.memory.storageFraction</span><br></pre></td></tr></table></figure>
+
+<p>If we substitute the values, we get the following:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">systemMemory = 18Gb = 19327352832 bytes</span><br><span class="line">reservedMemory = 300MB = 300 * 1024 * 1024 = 314572800</span><br><span class="line">usableMemory = systemMemory - reservedMemory = 19327352832 - 314572800 = 19012780032</span><br><span class="line">StorageMemory = usableMemory * spark.memory.fraction * spark.memory.storageFraction = 19012780032 * 0.6 * 0.5 = 5703834009.6 = 5.312109375GB</span><br></pre></td></tr></table></figure>
+<p>The value of 10.1GB displayed on the Spark UI does not match the value we obtained. Why is that? This is because the available Storage Memory displayed on the Spark UI is actually the sum of the Execution Memory and Storage Memory, i.e., usableMemory * spark.memory.fraction:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">StorageMemory = usableMemory * spark.memory.fraction = 19012780032 * 0.6 = 11407668019.2 = 10.62421GB</span><br></pre></td></tr></table></figure>
+<p>This value is also incorrect because even though we have set –executor-memory 18g, the memory available to Spark’s Executor is not as large as this. It is only 17179869184 bytes, which is obtained from Runtime.getRuntime.maxMemory. Therefore, we can perform the following calculations:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">systemMemory = 17179869184 bytes</span><br><span class="line">reservedMemory = 300MB = 300 * 1024 * 1024 = 314572800</span><br><span class="line">usableMemory = systemMemory - reservedMemory = 17179869184 - 314572800 = 16865296384</span><br><span class="line">StorageMemory= usableMemory * spark.memory.fraction = 16865296384 * 0.6 = 9.42421875 GB</span><br></pre></td></tr></table></figure>
+<p>When we convert 16865296384 * 0.6 bytes to GB by dividing it by 1024 * 1024 * 1024, we get 9.42421875 GB, which is still different from the value displayed on the UI. This is because the Spark UI converts bytes to GB by dividing them by 1000 * 1000 * 1000, as shown below:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">systemMemory = 17179869184 bytes</span><br><span class="line">reservedMemory = 300MB = 300 * 1024 * 1024 = 314572800</span><br><span class="line">usableMemory = systemMemory - reservedMemory = 17179869184 - 314572800 = 16865296384</span><br><span class="line">StorageMemory = usableMemory * spark.memory.fraction = 16865296384 * 0.6 bytes = 16865296384 * 0.6 / (1000 * 1000 * 1000) = 10.1GB</span><br></pre></td></tr></table></figure>
+<p>Now, the value matches. </p>
+<p>We have set –executor-memory to 18g, but the memory that Spark’s executor side can get through Runtime.getRuntime.maxMemory is actually not that big, it’s only 17179869184 bytes. How is this data calculated?</p>
+<p>Runtime.getRuntime.maxMemory is the maximum memory that the program can use, and its value is smaller than the actual configured executor memory value. This is because the heap portion of the memory allocation pool is divided into three parts: Eden, Survivor, and Tenured. There are two Survivor areas in these three parts, and we can only use one of them at any time. Therefore, we can use the following formula to describe it:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">1. ExecutorMemory = Eden + 2 * Survivor + Tenured</span><br><span class="line">2. Runtime.getRuntime.maxMemory = Eden + Survivor + Tenured</span><br></pre></td></tr></table></figure>
+<p>The value of 17179869184 bytes above may be different depending on your GC configuration, but the calculation formula above is the same.</p>
+<h3 id="Using-Heap-and-Off-Heap-Memory"><a href="#Using-Heap-and-Off-Heap-Memory" class="headerlink" title="Using Heap and Off-Heap Memory"></a>Using Heap and Off-Heap Memory</h3><p>Now, what if we enable off-heap memory? Our memory configurations are as follows:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">spark.executor.memory 18g</span><br><span class="line">spark.memory.offHeap.enabled true</span><br><span class="line">spark.memory.offHeap.size 10737418240</span><br></pre></td></tr></table></figure>
+<p>From the above, we can see that the off-heap memory is 10GB. Now, the available Storage Memory shown on Spark UI is 20.9GB, as follows:</p>
+<p><img src="/blog/2023/03/19/spark-executor-memory-introduction/sparkMemoryOffheapMemory.jpg"></p>
+<p>Actually, the available Storage Memory shown on Spark UI is the sum of heap memory and off-heap memory. The calculation formula is as follows:</p>
+<ul>
+<li><p>Heap</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">systemMemory = 17179869184 bytes</span><br><span class="line">reservedMemory = 300MB = 300 * 1024 * 1024 = 314572800</span><br><span class="line">usableMemory = systemMemory - reservedMemory = 17179869184 - 314572800 = 16865296384</span><br><span class="line">totalOnHeapStorageMemory = usableMemory * spark.memory.fraction = 16865296384 * 0.6 = 10119177830</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>Off-Heap</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">totalOffHeapStorageMemory = spark.memory.offHeap.size = 10737418240</span><br></pre></td></tr></table></figure></li>
+<li><p>Total Storage Memory</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">StorageMemory = totalOnHeapStorageMemory + totalOffHeapStorageMemory = (10119177830 + 10737418240) bytes = (20856596070 / (1000 * 1000 * 1000)) GB = 20.9 GB</span><br></pre></td></tr></table></figure></li>
+</ul>
+<p>By now, we have shown you a clear picture of the memory architecture and management logic of Spark executor. Going back to the first two questions we mentioned earlier, when the executor serializes data, all memory management is actually not handled by the JVM. Therefore, continuous requests can lead to the YARN container exceeding the memory limit and being killed by YARN. And when Spark encounters OOM due to data skew issues, the OOM actually occurs inside the JVM. As a user, we can easily determine the direct cause of our problem based on the different error messages of these two OOMs, whether it is caused by the overhead memory area or the insufficient no-heap JVM memory, and thus correctly deduce the direction we need to optimize.</p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/07/04/spark-tutorial/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/blog/2022/07/04/spark-tutorial/" class="post-title-link" itemprop="url">Spark Basic Tuning Guid</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2022-07-04 07:39:23" itemprop="dateCreated datePublished" datetime="2022-07-04T07:39:23+08:00">2022-07-04</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-08-12 15:46:41" itemprop="dateModified" datetime="2022-08-12T15:46:41+08:00">2022-08-12</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="How-spark-works"><a href="#How-spark-works" class="headerlink" title="How spark works ?"></a>How spark works ?</h1><p>Nowadays python is becoming more and more popular among data scientists. Pyspark is rightfully become one of the most popular tools among them. Today let’s use a very simple Pyspark sample to help us understand more about spark.</p>
+<h2 id="Architecture"><a href="#Architecture" class="headerlink" title="Architecture"></a>Architecture</h2><p>First of all, spark architecture is based on the most typical distribute system design.<br><img src="/blog/2022/07/04/spark-tutorial/spark-basic-architecture.png"><br>But if we develop a pyspark script, how this pyspark script run on spark cluster?<br>Before we dive into the specific sample, let’s give a briefly introduction of the spark concepts.</p>
+<h3 id="Spark-Concepts"><a href="#Spark-Concepts" class="headerlink" title="Spark Concepts"></a>Spark Concepts</h3><h4 id="stages"><a href="#stages" class="headerlink" title="stages"></a>stages</h4><p>Spark stages are the physical unit of execution for the computation of multiple tasks. The Spark stages are controlled by the Directed Acyclic Graph(DAG) for any data processing and transformations on the resilient distributed datasets(RDD). There are mainly two stages associated with the Spark frameworks such as, ShuffleMapStage and ResultStage. The Shuffle MapStage is the intermediate phase for the tasks which prepares data for subsequent stages, whereas resultStage is a final step to the spark function for the particular set of tasks in the spark job. ResultSet is associated with the initialization of parameter, counters and registry values in Spark.</p>
+<h4 id="Driver"><a href="#Driver" class="headerlink" title="Driver"></a>Driver</h4><p>Driver is a Java process. This is the process where the main() method of our Scala, Java, Python program runs. It executes the user code and creates a SparkSession or SparkContext and the SparkSession is responsible to create DataFrame, DataSet, RDD, execute SQL, perform Transformation &amp; Action, etc.<br> At the end of the day, this is just a process on a physical machine that is responsible for maintaining the state of the application running on the cluster.</p>
+<h4 id="Executor"><a href="#Executor" class="headerlink" title="Executor"></a>Executor</h4><p>Spark executors are the processes that perform the tasks assigned by the Spark driver. Executors have one core responsibility: take the tasks assigned by the driver, run them, and report back their state (success or failure) and results. Each Spark Application has its own separate executor processes.</p>
+<h4 id="Task"><a href="#Task" class="headerlink" title="Task"></a>Task</h4><p>As we mentioned, tasks will be executed in executor. there might be many tasks running on couples of executors. tasks can map to the stages, each stage has couples of tasks. These tasks run the same code related to the stages.</p>
+<h4 id="Job"><a href="#Job" class="headerlink" title="Job"></a>Job</h4><h4 id="Stage"><a href="#Stage" class="headerlink" title="Stage"></a>Stage</h4><h2 id="Running-sample"><a href="#Running-sample" class="headerlink" title="Running sample"></a>Running sample</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">1  from datetime import datetime</span><br><span class="line">2  now = datetime.now()</span><br><span class="line">3  current_time = now.strftime(&quot;%H:%M:%S&quot;)</span><br><span class="line">4  print(&quot;Current Time =&quot;, current_time)</span><br><span class="line">5  df = spark.read.format(&quot;csv&quot;).option(&quot;delimiter&quot;, &quot;,&quot;).load(&#x27;countries.csv&#x27;)</span><br><span class="line">6  df = df.withColumn(&#x27;C_DT&#x27;,lit(current_time))</span><br><span class="line">7  df.collect()</span><br><span class="line">8  print(&quot;new column added&quot;)</span><br></pre></td></tr></table></figure>
+<p>This is a simple pyspark script. How it runs on a spark cluster?</p>
+<ol>
+<li>These codes will be </li>
+<li></li>
+<li>In this case, Line 1, 2, 3, 4 will be executed on the driver. Line 5, 6 will be executed on the executor. Line 7, 8 will be executed on the driver.</li>
+</ol>
+<h2 id="Spark-UI"><a href="#Spark-UI" class="headerlink" title="Spark UI"></a>Spark UI</h2><h1 id=""><a href="#" class="headerlink" title=""></a></h1><h2 id="Basic-Tunning-Guides"><a href="#Basic-Tunning-Guides" class="headerlink" title="Basic Tunning Guides"></a>Basic Tunning Guides</h2><h3 id="principle-1"><a href="#principle-1" class="headerlink" title="principle 1:"></a>principle 1:</h3><h3 id="principle-2"><a href="#principle-2" class="headerlink" title="principle 2:"></a>principle 2:</h3><h2 id="Advanced-Tunning-Guides"><a href="#Advanced-Tunning-Guides" class="headerlink" title="Advanced Tunning Guides"></a>Advanced Tunning Guides</h2><h3 id="principle-1-1"><a href="#principle-1-1" class="headerlink" title="principle 1:"></a>principle 1:</h3><h3 id="principle-2-1"><a href="#principle-2-1" class="headerlink" title="principle 2:"></a>principle 2:</h3>
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2022/06/19/Zookeeper-Election/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -187,7 +387,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/blog/2022/06/19/Zookeeper-Election/" class="post-title-link" itemprop="url">Zookeeper Introduction</a>
+            <a href="/blog/2022/06/19/Zookeeper-Election/" class="post-title-link" itemprop="url">Zookeeper Election Mechanism Introduction</a>
         </h2>
 
         <div class="post-meta">
@@ -204,7 +404,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2022-06-25 22:24:46" itemprop="dateModified" datetime="2022-06-25T22:24:46+08:00">2022-06-25</time>
+                <time title="Modified: 2022-08-12 15:46:41" itemprop="dateModified" datetime="2022-08-12T15:46:41+08:00">2022-08-12</time>
               </span>
 
           
@@ -239,7 +439,7 @@
 <li>It’s Kinda different from the way we human vote. Each node of the zabbix cluster mantain a ballot box. As each node will send their vote to all the nodes cluster has, so all the nodes will hold the same votes eventually.</li>
 <li>They will try to find the one who holds the most votes will be the leader. Of cause there is a precondition, the number of votes leader hold must be more than half of the current cluster.</li>
 </ol>
-<h4 id="Election-Analysis"><a href="#Election-Analysis" class="headerlink" title="Election Analysis"></a>Election Analysis</h4><p>Let’s jump int the code. </p>
+<h3 id="Zookeeper-Election"><a href="#Zookeeper-Election" class="headerlink" title="Zookeeper Election"></a>Zookeeper Election</h3><p>Let’s jump int the code. </p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">   public interface Election &#123;</span><br><span class="line"></span><br><span class="line">    Vote lookForLeader() throws InterruptedException;</span><br><span class="line">    void shutdown();</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <p>This <code>Election</code> interface is very important, zookeeper implement the interface by developed a class called <code>FastLeaderElection</code> , let’s jump into the makeOffer()</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Messages that a peer wants to send to other peers.</span><br><span class="line"> * These messages can be both Notifications and Acks</span><br><span class="line"> * of reception of notification.</span><br><span class="line"> */</span><br><span class="line">public static class ToSend &#123;...&#125;</span><br><span class="line"></span><br><span class="line">LinkedBlockingQueue&lt;ToSend&gt; sendqueue;</span><br><span class="line">LinkedBlockingQueue&lt;Notification&gt; recvqueue;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * Multi-threaded implementation of message handler. Messenger</span><br><span class="line"> * implements two sub-classes: WorkReceiver and  WorkSender. The</span><br><span class="line"> * functionality of each is obvious from the name. Each of these</span><br><span class="line"> * spawns a new thread.</span><br><span class="line"> */</span><br><span class="line"></span><br><span class="line">protected class Messenger &#123;...&#125;</span><br><span class="line"></span><br><span class="line">QuorumPeer self;</span><br><span class="line">Messenger messenger;</span><br><span class="line">AtomicLong logicalclock = new AtomicLong(); /* Election instance */</span><br><span class="line">long proposedLeader;</span><br><span class="line">long proposedZxid;</span><br><span class="line">long proposedEpoch;</span><br></pre></td></tr></table></figure>
@@ -248,19 +448,21 @@
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">public synchronized void start() &#123;</span><br><span class="line">    if (!getView().containsKey(myid)) &#123;</span><br><span class="line">        throw new RuntimeException(&quot;My id &quot; + myid + &quot; not in the peer list&quot;);</span><br><span class="line">    &#125;</span><br><span class="line">    loadDataBase();</span><br><span class="line">    startServerCnxnFactory();</span><br><span class="line">    try &#123;</span><br><span class="line">        adminServer.start();</span><br><span class="line">    &#125; catch (AdminServerException e) &#123;</span><br><span class="line">        LOG.warn(&quot;Problem starting AdminServer&quot;, e);</span><br><span class="line">    &#125;</span><br><span class="line">    startLeaderElection();</span><br><span class="line">    startJvmPauseMonitor();</span><br><span class="line">    super.start();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">public synchronized void startLeaderElection() &#123;</span><br><span class="line">    try &#123;</span><br><span class="line">        if (getPeerState() == ServerState.LOOKING) &#123;</span><br><span class="line">            currentVote = new Vote(myid, getLastLoggedZxid(), getCurrentEpoch());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; catch (IOException e) &#123;</span><br><span class="line">        RuntimeException re = new RuntimeException(e.getMessage());</span><br><span class="line">        re.setStackTrace(e.getStackTrace());</span><br><span class="line">        throw re;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    this.electionAlg = createElectionAlgorithm(electionType);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
-<p>actually in <code>createElectionAlgorithm</code>, it composite a <code>FastLeaderElection</code>.</p>
+<p>actually in <code>createElectionAlgorithm</code>, it is also involves a <code>FastLeaderElection</code>. In case LOOKING, it contains all the logics which is responsible for the leader election. The method <code>totalOrderPredicate</code> is mainly responsible for judging which zknode is “Stronger” according to the <code>epoch</code>, <code>zkid</code>, <code>zid</code>.</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br></pre></td><td class="code"><pre><span class="line">case LOOKING:</span><br><span class="line">    if (getInitLastLoggedZxid() == -1) &#123;</span><br><span class="line">        LOG.debug(&quot;Ignoring notification as our zxid is -1&quot;);</span><br><span class="line">        break;</span><br><span class="line">    &#125;</span><br><span class="line">    if (n.zxid == -1) &#123;</span><br><span class="line">        LOG.debug(&quot;Ignoring notification from member with -1 zxid &#123;&#125;&quot;, n.sid);</span><br><span class="line">        break;</span><br><span class="line">    &#125;</span><br><span class="line">    // If notification &gt; current, replace and send messages out</span><br><span class="line">    if (n.electionEpoch &gt; logicalclock.get()) &#123;</span><br><span class="line">        logicalclock.set(n.electionEpoch);</span><br><span class="line">        recvset.clear();</span><br><span class="line">        if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, getInitId(), getInitLastLoggedZxid(), getPeerEpoch())) &#123;</span><br><span class="line">            updateProposal(n.leader, n.zxid, n.peerEpoch);</span><br><span class="line">        &#125; else &#123;</span><br><span class="line">            updateProposal(getInitId(), getInitLastLoggedZxid(), getPeerEpoch());</span><br><span class="line">        &#125;</span><br><span class="line">        sendNotifications();</span><br><span class="line">    &#125; else if (n.electionEpoch &lt; logicalclock.get()) &#123;</span><br><span class="line">            LOG.debug(</span><br><span class="line">                &quot;Notification election epoch is smaller than logicalclock. n.electionEpoch = 0x&#123;&#125;, logicalclock=0x&#123;&#125;&quot;,</span><br><span class="line">                Long.toHexString(n.electionEpoch),</span><br><span class="line">                Long.toHexString(logicalclock.get()));</span><br><span class="line">        break;</span><br><span class="line">    &#125; else if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">        updateProposal(n.leader, n.zxid, n.peerEpoch);</span><br><span class="line">        sendNotifications();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    LOG.debug(</span><br><span class="line">        &quot;Adding vote: from=&#123;&#125;, proposed leader=&#123;&#125;, proposed zxid=0x&#123;&#125;, proposed election epoch=0x&#123;&#125;&quot;,</span><br><span class="line">        n.sid,</span><br><span class="line">        n.leader,</span><br><span class="line">        Long.toHexString(n.zxid),</span><br><span class="line">        Long.toHexString(n.electionEpoch));</span><br><span class="line"></span><br><span class="line">    // don&#x27;t care about the version if it&#x27;s in LOOKING state</span><br><span class="line">    recvset.put(n.sid, new Vote(n.leader, n.zxid, n.electionEpoch, n.peerEpoch));</span><br><span class="line"></span><br><span class="line">    voteSet = getVoteTracker(recvset, new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch));</span><br><span class="line"></span><br><span class="line">    if (voteSet.hasAllQuorums()) &#123;</span><br><span class="line"></span><br><span class="line">        // Verify if there is any change in the proposed leader</span><br><span class="line">        while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) &#123;</span><br><span class="line">            if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">                recvqueue.put(n);</span><br><span class="line">                break;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        /*</span><br><span class="line">         * This predicate is true once we don&#x27;t read any new</span><br><span class="line">         * relevant message from the reception queue</span><br><span class="line">         */</span><br><span class="line">        if (n == null) &#123;</span><br><span class="line">            setPeerState(proposedLeader, voteSet);</span><br><span class="line">            Vote endVote = new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch);</span><br><span class="line">            leaveInstance(endVote);</span><br><span class="line">            return endVote;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    break;</span><br></pre></td></tr></table></figure>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Check if a pair (server id, zxid) succeeds our</span><br><span class="line"> * current vote.</span><br><span class="line"> *</span><br><span class="line"> */</span><br><span class="line">protected boolean totalOrderPredicate(long newId, long newZxid, long newEpoch, long curId, long curZxid, long curEpoch) &#123;</span><br><span class="line"></span><br><span class="line">    if (self.getQuorumVerifier().getWeight(newId) == 0) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return ((newEpoch &gt; curEpoch)</span><br><span class="line">            || ((newEpoch == curEpoch)</span><br><span class="line">                &amp;&amp; ((newZxid &gt; curZxid)</span><br><span class="line">                    || ((newZxid == curZxid)</span><br><span class="line">                        &amp;&amp; (newId &gt; curId)))));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>this is right part we refered to in the former section. </p>
+<p>Below is right part we refered to in the former section. </p>
 <ol>
 <li>if new epoch is higher, update vote as the new one.</li>
 <li>if new epoch is the same as current epoch, but new zxid is higher, update vote as the new one.</li>
 <li>if new epoch is the same as current epoch, new zxid is the same, update vote as the new one.</li>
 </ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Check if a pair (server id, zxid) succeeds our</span><br><span class="line"> * current vote.</span><br><span class="line"> *</span><br><span class="line"> */</span><br><span class="line">protected boolean totalOrderPredicate(long newId, long newZxid, long newEpoch, long curId, long curZxid, long curEpoch) &#123;</span><br><span class="line"></span><br><span class="line">    if (self.getQuorumVerifier().getWeight(newId) == 0) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return ((newEpoch &gt; curEpoch)</span><br><span class="line">            || ((newEpoch == curEpoch)</span><br><span class="line">                &amp;&amp; ((newZxid &gt; curZxid)</span><br><span class="line">                    || ((newZxid == curZxid)</span><br><span class="line">                        &amp;&amp; (newId &gt; curId)))));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>But how we confirm that the vote has already finished? The answer is time. First, node will judge if they already has all the votes come from other zknodes. Second, zk node will wait a specifical time for any more updated from others. If it doesn’t receive any updates, it will update peerStatus.</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">if (voteSet.hasAllQuorums()) &#123;</span><br><span class="line"></span><br><span class="line">    // Verify if there is any change in the proposed leader</span><br><span class="line">    while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) &#123;</span><br><span class="line">        if (totalOrderPredicate(n.leader, n.zxid, n.peerEpoch, proposedLeader, proposedZxid, proposedEpoch)) &#123;</span><br><span class="line">            recvqueue.put(n);</span><br><span class="line">            break;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    /*</span><br><span class="line">     * This predicate is true once we don&#x27;t read any new</span><br><span class="line">     * relevant message from the reception queue</span><br><span class="line">     */</span><br><span class="line">    if (n == null) &#123;</span><br><span class="line">        setPeerState(proposedLeader, voteSet);</span><br><span class="line">        Vote endVote = new Vote(proposedLeader, proposedZxid, logicalclock.get(), proposedEpoch);</span><br><span class="line">        leaveInstance(endVote);</span><br><span class="line">        return endVote;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-
+<p>This logic is simple, if the current node is not leader, it will update the status to learningState, other vise it will update the status to LEADING.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line"> * Update the peer state based on the given proposedLeader. Also update</span><br><span class="line"> * the leadingVoteSet if it becomes the leader.</span><br><span class="line"> */</span><br><span class="line">private void setPeerState(long proposedLeader, SyncedLearnerTracker voteSet) &#123;</span><br><span class="line">    ServerState ss = (proposedLeader == self.getId()) ? ServerState.LEADING : learningState();</span><br><span class="line">    self.setPeerState(ss);</span><br><span class="line">    if (ss == ServerState.LEADING) &#123;</span><br><span class="line">        leadingVoteSet = voteSet;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="Conclusion"><a href="#Conclusion" class="headerlink" title="Conclusion"></a>Conclusion</h3><p>Above is all the core concepts and codes related to the election. In order to reduce the complexity, I omitted all the analisis of the code related to communication. I will post another blog if I can find time as writting in english will cost twice as much time as writting in chinese TT.</p>
 
       
     </div>
@@ -444,9 +646,7 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <p>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any<br>issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></p>
-<hr>
-<h3 id="What’s-OAuth"><a href="#What’s-OAuth" class="headerlink" title="What’s OAuth?"></a>What’s OAuth?</h3><p>OAuth is a protocol that designed to protect the user who wanna share their data to third part application or systems.<br>OAuth 2.0 is subsequent version of OAuth 1.0, mostly we use OAuth 2.0 nowadays.</p>
+          <h2 id="You-can-click-on-the-Blog-Home-to-browser-my-blogs-and-find-more-interesting-content-If-there-are-anyissues-or-suggestions-please-feel-free-to-reach-out-to-me-or-simply-submit-a-merge-request-onGitHub-Link"><a href="#You-can-click-on-the-Blog-Home-to-browser-my-blogs-and-find-more-interesting-content-If-there-are-anyissues-or-suggestions-please-feel-free-to-reach-out-to-me-or-simply-submit-a-merge-request-onGitHub-Link" class="headerlink" title="You can click on the Blog Home to browser my blogs and find more interesting content. If there are anyissues or suggestions, please feel free to reach out to me or simply submit a merge request onGitHub Link"></a>You can click on the <a href="../index.md">Blog Home</a> to browser my blogs and find more interesting content. If there are any<br>issues or suggestions, please feel free to reach out to me or simply submit a merge request on<br><a href="https://lorenzolou.github.io/blog/">GitHub Link</a></h2><h3 id="What’s-OAuth"><a href="#What’s-OAuth" class="headerlink" title="What’s OAuth?"></a>What’s OAuth?</h3><p>OAuth is a protocol that designed to protect the user who wanna share their data to third part application or systems.<br>OAuth 2.0 is subsequent version of OAuth 1.0, mostly we use OAuth 2.0 nowadays.</p>
 <h3 id="Sample"><a href="#Sample" class="headerlink" title="Sample"></a>Sample</h3><p>Let’s say when we’re going to log in YOUTUBE by using the account of GOOGLE</p>
 <h4 id="Terms"><a href="#Terms" class="headerlink" title="Terms"></a>Terms</h4><p>In this case some here are the professional introduction of terms we may use.</p>
 <ul>
@@ -620,7 +820,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/blog/archives/">
         
-          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-count">6</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -648,7 +848,7 @@
 <div class="copyright">
   
   &copy; 
-  <span itemprop="copyrightYear">2022</span>
+  <span itemprop="copyrightYear">2023</span>
   <span class="with-love">
     <i class="fa fa-heart"></i>
   </span>
