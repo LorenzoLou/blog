@@ -173,6 +173,168 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2023/04/07/What-s-virtual-thread-in-JDK-19/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/blog/2023/04/07/What-s-virtual-thread-in-JDK-19/" class="post-title-link" itemprop="url">What's virtual thread in JDK 19?</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2023-04-07 10:39:22 / Modified: 11:40:25" itemprop="dateCreated datePublished" datetime="2023-04-07T10:39:22+08:00">2023-04-07</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>Recently, JDK 19 was released, which introduced several new features. One of the more notable features is the addition of virtual threads.</p>
+<p>Many people may be confused about what virtual threads are and how they differ from the platform threads we currently use.</p>
+<p>To understand virtual threads in JDK 19, we first need to understand how threads are implemented.</p>
+<h2 id="The-Implementation-of-Threads"><a href="#The-Implementation-of-Threads" class="headerlink" title="The Implementation of Threads"></a>The Implementation of Threads</h2><p>We all know that in the operating system, threads are scheduling execution units that are more lightweight than processes. The introduction of threads can separate the allocation of resources and scheduling execution of a process, and each thread can share process resources as well as be independently scheduled.</p>
+<p>In fact, there are three main ways of implementing threads: using kernel threads, using user threads, and using a combination of user threads and lightweight processes.</p>
+<h2 id="Implementation-Using-Kernel-Threads"><a href="#Implementation-Using-Kernel-Threads" class="headerlink" title="Implementation Using Kernel Threads"></a>Implementation Using Kernel Threads</h2><p>Kernel-level threads (KLT) are threads supported directly by the operating system kernel. These threads are switched by the kernel, and the kernel schedules them by manipulating the scheduler. The kernel also maps thread tasks to various processors and provides API interfaces to manage threads to applications.</p>
+<p>Applications generally do not directly use kernel threads, but instead use a high-level interface of kernel threads called Light Weight Processes (LWP). LWPs are threads as we usually understand them. Since each LWP is supported by a kernel thread, supporting kernel threads is a prerequisite for LWPs.</p>
+<p>With kernel thread support, each LWP becomes an independent scheduling unit. Even if an LWP is blocked in a system call, it will not affect the entire process from continuing to work.</p>
+<p>However, LWPs have their limitations. First of all, because they are implemented based on kernel threads, all thread operations, such as creation, destruction, and synchronization, require system calls. The cost of system calls is relatively high, requiring a switch between user mode and kernel mode. Secondly, each LWP requires support of a kernel thread. Therefore, LWPs consume certain kernel resources, such as kernel thread stack space, and the number of LWPs that a system can support is limited.</p>
+<h2 id="Implementation-Using-User-Threads"><a href="#Implementation-Using-User-Threads" class="headerlink" title="Implementation Using User Threads"></a>Implementation Using User Threads</h2><p>In this implementation, a thread library is built in user space, and thread management is completed through a run-time system. Since this thread implementation is in user space, the operating system kernel is not aware of the existence of threads. Therefore, the kernel manages processes, and thread switching does not require kernel operations.</p>
+<p>In this implementation, the relationship between a process and its threads is one-to-many.</p>
+<p>The advantage of this thread implementation is that thread switching is fast, and it can run on any operating system as long as the thread library is implemented. However, the disadvantages are also significant. All thread operations need to be handled by the user program, and because most system calls are blocking, once a process is blocked, all threads in the process will be blocked as well. Additionally, mapping threads to other processors in a multi-processor system is also a significant problem.</p>
+<h2 id="Mixed-Implementation-Using-User-Threads-and-Light-Weight-Processes"><a href="#Mixed-Implementation-Using-User-Threads-and-Light-Weight-Processes" class="headerlink" title="Mixed Implementation Using User Threads and Light Weight Processes"></a>Mixed Implementation Using User Threads and Light Weight Processes</h2><p>Another mixed implementation approach is to create threads in user space through a thread library, but thread scheduling is completed by the kernel. Multiple user threads can reuse multiple kernel threads through multiplexing. We won’t go into more detail on this approach.</p>
+<h2 id="Implementation-of-Java-Threads"><a href="#Implementation-of-Java-Threads" class="headerlink" title="Implementation of Java Threads"></a>Implementation of Java Threads</h2><p>The above describes three implementation approaches for operating system threads. Different operating systems use different mechanisms to implement threads. For example, Windows uses kernel threads, while Solaris uses a mixed mode.</p>
+<p>As a cross-platform programming language, Java’s thread implementation relies on specific operating systems. For commonly used operating systems such as Windows and Linux, kernel threads are used for implementation.</p>
+<p>Therefore, when we create a thread in Java code, it actually needs to be mapped to the specific implementation of the operating system’s thread. The commonly used implementation through kernel threads requires kernel involvement during creation and scheduling, which is costly. Although Java provides a thread pool to avoid repeated thread creation, there is still a lot of room for optimization. Additionally, this implementation approach means that thread numbers are limited by machine resources.</p>
+<h2 id="Virtual-Threads"><a href="#Virtual-Threads" class="headerlink" title="Virtual Threads"></a>Virtual Threads</h2><p>Virtual threads introduced in JDK 19 are lightweight threads implemented by JDK, which can avoid the additional cost of context switching. The implementation principle is that JDK no longer associates each thread one-to-one with an operating system thread. Instead, it maps multiple virtual threads to a small number of operating system threads and uses effective scheduling to avoid those context switches.</p>
+<p>Furthermore, we can create a large number of virtual threads in the application without relying on the number of platform threads. These virtual threads are managed by the JVM, so they do not increase additional context switching overhead because they are stored as normal Java objects in RAM.</p>
+<h2 id="Difference-between-Virtual-Threads-and-Platform-Threads"><a href="#Difference-between-Virtual-Threads-and-Platform-Threads" class="headerlink" title="Difference between Virtual Threads and Platform Threads"></a>Difference between Virtual Threads and Platform Threads</h2><p>Firstly, virtual threads are always daemon threads. The setDaemon(false) method cannot change a virtual thread to a non-daemon thread. Therefore, it is important to note that when all started non-daemon threads terminate, the JVM will terminate as well. This means that the JVM will not wait for virtual threads to complete before exiting.</p>
+<p>Secondly, even if the setPriority() method is used, virtual threads always have normal priority and cannot change priority. Calling this method on a virtual thread has no effect.</p>
+<p>In addition, virtual threads do not support methods such as stop(), suspend(), or resume(). Calling these methods on a virtual thread will result in an UnsupportedOperationException exception being thrown.</p>
+<h2 id="How-to-Use-Virtual-Threads"><a href="#How-to-Use-Virtual-Threads" class="headerlink" title="How to Use Virtual Threads"></a>How to Use Virtual Threads</h2><p>Next, let’s introduce how to use virtual threads in JDK 19.</p>
+<p>First, you can run a virtual thread using Thread.startVirtualThread():</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Thread.startVirtualThread(() -&gt; &#123;    System.out.println(&quot;Virtual thread is running...&quot;);&#125;); </span><br></pre></td></tr></table></figure>
+
+<p>Secondly, you can also create a virtual thread using Thread.Builder. Thread provides ofPlatform() to create a platform thread and ofVirtual() to create a virtual thread.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Thread.Builder platformBuilder = Thread.ofPlatform().name(&quot;Platform Thread&quot;);Thread.Builder virtualBuilder = Thread.ofVirtual().name(&quot;Virtual Thread&quot;);</span><br><span class="line">Thread t1 = platformBuilder .start(() -&gt; &#123;...&#125;); Thread t2 = virtualBuilder.start(() -&gt; &#123;...&#125;);</span><br></pre></td></tr></table></figure>
+<p>In addition, thread pools also support virtual threads, and you can create virtual threads using Executors.newVirtualThreadPerTaskExecutor():</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">try (var executor = Executors.newVirtualThreadPerTaskExecutor()) &#123;    IntStream.range(0, 10000).forEach(i -&gt; &#123;        executor.submit(() -&gt; &#123;            Thread.sleep(Duration.ofSeconds(1));            return i;        &#125;);    &#125;);&#125;</span><br></pre></td></tr></table></figure>
+<p>However, it is not recommended to use virtual threads and thread pools together because the design of Java thread pools is to avoid the cost of creating new operating system threads, but creating virtual threads is not very costly, so there is no need to put them in the thread pool.</p>
+<h2 id="Performance-Difference"><a href="#Performance-Difference" class="headerlink" title="Performance Difference"></a>Performance Difference</h2><p>After all this talk about virtual threads, can they really improve performance and how much? Let’s do a test.</p>
+<p>Let’s write a simple task that waits for 1 second before printing a message to the console:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">final AtomicInteger atomicInteger = new AtomicInteger();</span><br><span class="line"></span><br><span class="line">Runnable runnable = () -&gt; &#123;</span><br><span class="line">  try &#123;</span><br><span class="line">    Thread.sleep(Duration.ofSeconds(1));</span><br><span class="line">  &#125; catch(Exception e) &#123;</span><br><span class="line">      System.out.println(e);</span><br><span class="line">  &#125;</span><br><span class="line">  System.out.println(&quot;Work Done - &quot; + atomicInteger.incrementAndGet());</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>Now, we will create 10,000 threads from this Runnable and use virtual threads and platform threads to execute them to compare their performance.</p>
+<p>Let’s start with a familiar implementation of platform threads:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Instant start = Instant.now();</span><br><span class="line"></span><br><span class="line">try (var executor = Executors.newFixedThreadPool(100)) &#123;</span><br><span class="line">  for(int i = 0; i &lt; 10_000; i++) &#123;</span><br><span class="line">    executor.submit(runnable);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">Instant finish = Instant.now();</span><br><span class="line">long timeElapsed = Duration.between(start, finish).toMillis();  </span><br><span class="line">System.out.println(&quot;Total time elapsed: &quot; + timeElapsed);</span><br></pre></td></tr></table></figure>
+<p>The output is:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Total time elapsed: 100568</span><br></pre></td></tr></table></figure>
+<p>About 100 seconds in total. Now let’s run it again using virtual threads.</p>
+<p>Because in JDK 19, virtual threads are a preview API and are disabled by default. If you are using Intellij, and encounter this issue below:<br><img src="/blog/2023/04/07/What-s-virtual-thread-in-JDK-19/PreviewDisableIssue.png"></p>
+<p>you need to add some configs to enable the preview features.</p>
+<p><img src="/blog/2023/04/07/What-s-virtual-thread-in-JDK-19/previewsettings.png"></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Instant start = Instant.now();</span><br><span class="line"></span><br><span class="line">try (var executor = Executors.newVirtualThreadPerTaskExecutor()) &#123;</span><br><span class="line">  for(int i = 0; i &lt; 10_000; i++) &#123;</span><br><span class="line">    executor.submit(runnable);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">Instant finish = Instant.now();</span><br><span class="line">long timeElapsed = Duration.between(start, finish).toMillis();  </span><br><span class="line">System.out.println(&quot;Total time elapsed: &quot; + timeElapsed);</span><br></pre></td></tr></table></figure>
+<p>We use Executors.newVirtualThreadPerTaskExecutor() to create virtual threads, and the output is:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Total time elapsed: 1219</span><br></pre></td></tr></table></figure>
+<p>About 1.2 seconds in total.</p>
+<p>The difference between 100 seconds and 1.2 seconds is enough to show the immediate improvement in virtual thread performance.</p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2023/03/25/Linux-Virtual-Memory-Introduction/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/blog/2023/03/25/Linux-Virtual-Memory-Introduction/" class="post-title-link" itemprop="url">Linux Virtual Memory Introduction</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2023-03-25 11:56:44" itemprop="dateCreated datePublished" datetime="2023-03-25T11:56:44+08:00">2023-03-25</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2023/03/19/spark-executor-memory-introduction/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -854,7 +1016,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/blog/archives/">
         
-          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-count">8</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
