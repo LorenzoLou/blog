@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/blog/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/blog/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/blog/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/blog/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/blog/css/main.css">
+
+
+<link rel="stylesheet" href="/blog/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"lorenzolou.github.io","root":"/blog/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Yarn Resource Allocation OverviewYarn’s three classic schedulers, FIFO (which is rarely used), Fair Scheduler, and the topic of today’s discussion, Yarn’s Capacity Scheduler, are familiar to many. The">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Yarn Capacity Scheduler Introduction">
+<meta property="og:url" content="https://lorenzolou.github.io/blog/2023/04/16/Yarn-Capacity-Scheduler-Introduction/index.html">
+<meta property="og:site_name" content="Lorenzo&#39;s Playground">
+<meta property="og:description" content="Yarn Resource Allocation OverviewYarn’s three classic schedulers, FIFO (which is rarely used), Fair Scheduler, and the topic of today’s discussion, Yarn’s Capacity Scheduler, are familiar to many. The">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2023-04-16T01:27:05.000Z">
+<meta property="article:modified_time" content="2023-04-16T07:50:57.891Z">
+<meta property="article:author" content="Lorenzo Lou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://lorenzolou.github.io/blog/2023/04/16/Yarn-Capacity-Scheduler-Introduction/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Yarn Capacity Scheduler Introduction | Lorenzo's Playground</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/blog/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Lorenzo's Playground</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/blog/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/blog/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://lorenzolou.github.io/blog/2023/04/16/Yarn-Capacity-Scheduler-Introduction/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/blog/images/avatar.gif">
+      <meta itemprop="name" content="Lorenzo Lou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Lorenzo's Playground">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Yarn Capacity Scheduler Introduction
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2023-04-16 09:27:05 / Modified: 15:50:57" itemprop="dateCreated datePublished" datetime="2023-04-16T09:27:05+08:00">2023-04-16</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Yarn-Resource-Allocation-Overview"><a href="#Yarn-Resource-Allocation-Overview" class="headerlink" title="Yarn Resource Allocation Overview"></a>Yarn Resource Allocation Overview</h2><p>Yarn’s three classic schedulers, FIFO (which is rarely used), Fair Scheduler, and the topic of today’s discussion, Yarn’s Capacity Scheduler, are familiar to many. The official documentation provides a detailed explanation of the configuration parameters for the Capacity Scheduler. Today, I will use a practical example to help you understand the principles of this allocation mechanism.</p>
+<h3 id="Practical-Example"><a href="#Practical-Example" class="headerlink" title="Practical Example"></a>Practical Example</h3><p>First, we need to understand how Yarn obtains information about the available resources in the current cluster, i.e., how much resources are still available. Yarn obtains the available resources in the current cluster by checking the usage of resources in the file system mounted under &#x2F;proc in Linux. In this example, let’s assume that the Yarn cluster has a total of 11GB of memory resources (for the sake of simplification, we only consider memory resources, assume there is only one node in the entire cluster, one application launches only one container, and we do not consider the issue of virtual memory). User A submits an application A that requires 10GB of memory. After application A starts, the actual resource usage is 1GB. Next, user B submits a similar application B that requests 10GB of memory resources, and the actual usage of the application after it starts is also 1GB.</p>
+<p>From the perspective of the Yarn Application Master (AM), the entire process in this example is as follows:</p>
+<ol>
+<li>Application A’s AM starts and begins preparing resource requests</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">private ContainerRequest setupContainerAskForRM() &#123;</span><br><span class="line">  // setup requirements for hosts</span><br><span class="line">  // using * as any host will do for the distributed shell app</span><br><span class="line">  // set the priority for the request</span><br><span class="line">  // TODO - what is the range for priority? how to decide?</span><br><span class="line">  Priority pri = Priority.newInstance(requestPriority);</span><br><span class="line"></span><br><span class="line">  // Set up resource type requirements</span><br><span class="line">  ContainerRequest request = new ContainerRequest(</span><br><span class="line">      getTaskResourceCapability(),</span><br><span class="line">      null, null, pri, 0, true, null,</span><br><span class="line">      ExecutionTypeRequest.newInstance(containerType, enforceExecType),</span><br><span class="line">      containerResourceProfile);</span><br><span class="line">  LOG.info(&quot;Requested container ask: &quot; + request.toString());</span><br><span class="line">  return request;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ol start="2">
+<li><p>To obtain the current available resources in the cluster, we first ignore concepts such as reservation and preemption and try to simplify the process as much as possible for easier understanding.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">private ContainerAllocation assignContainersOnNode(Resource clusterResource,</span><br><span class="line">    FiCaSchedulerNode node, SchedulerRequestKey schedulerKey,</span><br><span class="line">    RMContainer reservedContainer, SchedulingMode schedulingMode,</span><br><span class="line">    ResourceLimits currentResoureLimits) &#123;</span><br><span class="line">  ContainerAllocation allocation;</span><br><span class="line">  NodeType requestLocalityType = null;</span><br><span class="line"></span><br><span class="line">  // Data-local</span><br><span class="line">  PendingAsk nodeLocalAsk =</span><br><span class="line">      application.getPendingAsk(schedulerKey, node.getNodeName());</span><br><span class="line">  if (nodeLocalAsk.getCount() &gt; 0) &#123;</span><br><span class="line">    requestLocalityType = NodeType.NODE_LOCAL;</span><br><span class="line">    allocation =</span><br><span class="line">        assignNodeLocalContainers(clusterResource, nodeLocalAsk,</span><br><span class="line">            node, schedulerKey, reservedContainer, schedulingMode,</span><br><span class="line">            currentResoureLimits);</span><br><span class="line">    if (Resources.greaterThan(rc, clusterResource, // we can just focus on this line</span><br><span class="line">        allocation.getResourceToBeAllocated(), Resources.none())) &#123;</span><br><span class="line">      allocation.requestLocalityType = requestLocalityType;</span><br><span class="line">      return allocation;</span><br><span class="line">    &#125; </span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
+<p>And where do these cluster resources come from? We can trace the following code by examining the program stack.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">AbstractLeafQueue queue = ((AbstractLeafQueue) reservedApplication.getQueue());</span><br><span class="line">CSAssignment assignment = queue.assignContainers(getClusterResource(),</span><br><span class="line">    new SimpleCandidateNodeSet&lt;&gt;(node),</span><br><span class="line">    // TODO, now we only consider limits for parent for non-labeled</span><br><span class="line">    // resources, should consider labeled resources as well.</span><br><span class="line">    new ResourceLimits(labelManager</span><br><span class="line">        .getResourceByLabel(RMNodeLabelsManager.NO_LABEL,</span><br><span class="line">            getClusterResource())),</span><br><span class="line">    SchedulingMode.RESPECT_PARTITION_EXCLUSIVITY);</span><br></pre></td></tr></table></figure>
+<p>Going inside, we can see that all resource information is reported by the noteTracker.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">public Resource getClusterResource() &#123;</span><br><span class="line">  return nodeTracker.getClusterCapacity();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Continuing to trace to the NodeTracker, we find that it is responsible for managing the entire cluster’s resources and providing them to the ResourceManager for allocation. Its main responsibilities include: keeping records of the status and resource usage of all nodes in the cluster, updating changes in node status and resource usage, responding to requests from the ResourceManager and providing resource allocation.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">// Update cluster capacity</span><br><span class="line">Resources.addTo(clusterCapacity, node.getTotalResource());</span><br><span class="line">staleClusterCapacity = Resources.clone(clusterCapacity);</span><br><span class="line">ClusterMetrics.getMetrics().incrCapability(node.getTotalResource());</span><br></pre></td></tr></table></figure>
+<p>Continuing to trace further, we can find that the “total resource” here is derived from the “capacity” attribute.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">public RMNodeImpl(NodeId nodeId, RMContext context, String hostName,</span><br><span class="line">    int cmPort, int httpPort, Node node, Resource capability,</span><br><span class="line">    String nodeManagerVersion, Resource physResource) &#123;</span><br><span class="line">  this.nodeId = nodeId;</span><br><span class="line">  this.context = context;</span><br><span class="line">  this.hostName = hostName;</span><br><span class="line">  this.commandPort = cmPort;</span><br><span class="line">  this.httpPort = httpPort;</span><br><span class="line">  this.totalCapability = capability; </span><br><span class="line">  this.nodeAddress = hostName + &quot;:&quot; + cmPort;</span><br><span class="line">  this.httpAddress = hostName + &quot;:&quot; + httpPort;</span><br><span class="line">  this.node = node;</span><br><span class="line">  this.healthReport = &quot;Healthy&quot;;</span><br><span class="line">  this.lastHealthReportTime = System.currentTimeMillis();</span><br><span class="line">  this.nodeManagerVersion = nodeManagerVersion;</span><br><span class="line">  this.timeStamp = 0;</span><br><span class="line">  // If physicalResource is not available, capability is a reasonable guess</span><br><span class="line">  this.physicalResource = physResource==null ? capability : physResource;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">public RegisterNodeManagerResponse registerNodeManager(</span><br><span class="line">    RegisterNodeManagerRequest request) throws YarnException,</span><br><span class="line">    IOException &#123;</span><br><span class="line">  NodeId nodeId = request.getNodeId();</span><br><span class="line">  String host = nodeId.getHost();</span><br><span class="line">  int cmPort = nodeId.getPort();</span><br><span class="line">  int httpPort = request.getHttpPort();</span><br><span class="line">  Resource capability = request.getResource();</span><br><span class="line">  String nodeManagerVersion = request.getNMVersion();</span><br><span class="line">  Resource physicalResource = request.getPhysicalResource();</span><br><span class="line">  NodeStatus nodeStatus = request.getNodeStatus();</span><br></pre></td></tr></table></figure>
+<p>Once we’ve traced to this point, we can see that the “resource” here is actually reported by the NodeManager. Let’s continue tracing.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">protected void serviceInit(Configuration conf) throws Exception &#123;</span><br><span class="line">  this.totalResource = NodeManagerHardwareUtils.getNodeResources(conf);</span><br><span class="line">  long memoryMb = totalResource.getMemorySize();</span><br><span class="line">  float vMemToPMem =</span><br><span class="line">      conf.getFloat(</span><br><span class="line">          YarnConfiguration.NM_VMEM_PMEM_RATIO,</span><br><span class="line">          YarnConfiguration.DEFAULT_NM_VMEM_PMEM_RATIO);</span><br><span class="line">  long virtualMemoryMb = (long)Math.ceil(memoryMb * vMemToPMem);</span><br><span class="line">  int virtualCores = totalResource.getVirtualCores();</span><br></pre></td></tr></table></figure>
+<p>In NodeStatusUpdaterImpl.java, we can find the code for updating the relevant resource information.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">// Get actual node physical resources</span><br><span class="line">long physicalMemoryMb = memoryMb;</span><br><span class="line">int physicalCores = virtualCores;</span><br><span class="line">ResourceCalculatorPlugin rcp =</span><br><span class="line">    ResourceCalculatorPlugin.getNodeResourceMonitorPlugin(conf);</span><br><span class="line">if (rcp != null) &#123;</span><br><span class="line">  physicalMemoryMb = rcp.getPhysicalMemorySize() / (1024 * 1024);</span><br><span class="line">  physicalCores = rcp.getNumProcessors();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>We can see that through ResourceCalculatorPlugin.java, YARN has two platform implementations, one for Windows and one for Linux. Here, we focus on the Linux platform implementation.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">private ResourceUtilization getNodeUtilization() &#123;</span><br><span class="line">  NodeResourceMonitorImpl nodeResourceMonitor =</span><br><span class="line">      (NodeResourceMonitorImpl) this.context.getNodeResourceMonitor();</span><br><span class="line">  return nodeResourceMonitor.getUtilization();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>NodeResourceMonitor.java</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">@Override</span><br><span class="line">public void run() &#123;</span><br><span class="line">  while (true) &#123;</span><br><span class="line">    // Get node utilization and save it into the health status</span><br><span class="line">    long pmem = resourceCalculatorPlugin.getPhysicalMemorySize() -</span><br><span class="line">        resourceCalculatorPlugin.getAvailablePhysicalMemorySize();</span><br><span class="line">    long vmem =</span><br><span class="line">        resourceCalculatorPlugin.getVirtualMemorySize()</span><br><span class="line">            - resourceCalculatorPlugin.getAvailableVirtualMemorySize();</span><br><span class="line">    float vcores = resourceCalculatorPlugin.getNumVCoresUsed();</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>Upon receiving the application submission request from User A for 10GB of memory, and upon verifying that the current cluster resources are 11GB, it is determined that there are sufficient resources. As such, resources are allocated and the corresponding containers are launched to run the application.</p>
+</li>
+</ol>
+<p>Through the above three steps, we can see that the resources reported by the NodeManager are all actually available resources. Therefore, when the second application request is made, assuming that there is only one node in the current cluster, the available resources for the cluster when the second job is submitted would be <code>11GB (total) - 1GB (actual usage) = 10GB</code>, which still satisfies the submission conditions. However, once the second application is successfully submitted, the available resources for the cluster become <code>11GB - 1GB (application A) - 1GB (application B) = 9GB</code>. Therefore, if a third application requests 9GB of memory, regardless of its actual usage rate, the application can still run normally.</p>
+<h2 id="Conclusion"><a href="#Conclusion" class="headerlink" title="Conclusion"></a>Conclusion</h2><p>In this example, we can conclude that a YARN cluster with only 11GB of memory resources can provide resources for Application A with 10GB resource requests, Application B with 10GB resource requests, and Application C with 9GB resource requests to run simultaneously. Therefore, we can draw the following two conclusions:</p>
+<ul>
+<li>If the resource request of Application C is larger, e.g. 30GB (ignoring its actual usage rate), it will fail to submit because it cannot obtain the requested amount of resources. And let’s say we have a yarn cluster which contains 10GB memory in total and using Capacity Scheduler. We have two application running on the cluster now and each of them’s application of memory resource is 10GB, but the real usage of memory is 1GB. So actuall there are just 2GB memory has been really used. But both of them applied for 10GB, so some time later, the first application try to increase the realy use of memory from 1GB to 10GB, then what will happen? If the first application increases its actual memory usage from 1GB to 10GB, then YARN’s Capacity Scheduler will detect that there is not enough available memory in the cluster to satisfy the request. This is because the Capacity Scheduler has already allocated 10GB of memory to each of the two applications, even though they only used 1GB of memory each. As a result, the first application will not be able to acquire the requested amount of memory and may fail to continue running.<br>This scenario highlights the importance of carefully managing and optimizing resource allocation in a YARN cluster. It is recommended to accurately estimate the actual memory needs of each application and adjust the requested memory accordingly to avoid over-allocating resources. This can help to avoid situations where applications cannot acquire the resources they need due to insufficient available memory in the cluster. Additionally, regularly monitoring memory usage and adjusting resource allocation as needed can help to ensure the efficient use of cluster resources.<br>Therefore, reducing the amount of resources requested by users is meaningful, and we cannot allocate as many resources to users as they want.</li>
+<li>Assuming we optimize the parameters so that the user’s request for resources is reduced from <code>10GB + 10GB + 9GB = 29GB</code> to <code>5GB + 5GB + 5GB = 15GB</code>, we cannot say that we have saved 15GB of resources for the cluster. However, as shown in the above example, it is still necessary to optimize these parameters.</li>
+</ul>
+<p>Here, we will not discuss the issue of overallocation, such as in the case where the actual usage rate of Application A suddenly increases from 1GB to 11GB. In the future, I will continue to update some of the features of YARN in oversubscription.</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/blog/2023/04/07/What-s-virtual-thread-in-JDK-19/" rel="prev" title="What's virtual thread in JDK 19?">
+      <i class="fa fa-chevron-left"></i> What's virtual thread in JDK 19?
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+    <div class="comments" id="gitalk-container"></div>
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Yarn-Resource-Allocation-Overview"><span class="nav-number">1.</span> <span class="nav-text">Yarn Resource Allocation Overview</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Practical-Example"><span class="nav-number">1.1.</span> <span class="nav-text">Practical Example</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">2.</span> <span class="nav-text">Conclusion</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Lorenzo Lou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/blog/archives/">
+        
+          <span class="site-state-item-count">9</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Lorenzo Lou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/blog/lib/anime.min.js"></script>
+  <script src="/blog/lib/velocity/velocity.min.js"></script>
+  <script src="/blog/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/blog/js/utils.js"></script>
+
+<script src="/blog/js/motion.js"></script>
+
+
+<script src="/blog/js/schemes/pisces.js"></script>
+
+
+<script src="/blog/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/blog/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.css">
+
+<script>
+NexT.utils.loadComments(document.querySelector('#gitalk-container'), () => {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.js', () => {
+    var gitalk = new Gitalk({
+      clientID    : '686954989cace0b7e2ec',
+      clientSecret: 'd06f0e8553b92cf39b567431dbeaeec90c9f59a8',
+      repo        : 'blog',
+      owner       : 'LorenzoLou',
+      admin       : ['LorenzoLou'],
+      id          : '1fbda20284d86fb6d691e42e12721a84',
+        language: 'en',
+      distractionFreeMode: true
+    });
+    gitalk.render('gitalk-container');
+  }, window.Gitalk);
+});
+</script>
+
+</body>
+</html>
